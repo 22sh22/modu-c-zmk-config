@@ -1,0 +1,12 @@
+include:
+  - board: ms88sf3/nrf52840
+    shield: modu_left
+    cmake-args: >-
+      "-DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/modu-c-firmware/modu-module;${GITHUB_WORKSPACE}/modu-c-firmware/zmk-pmw3610-driver"
+    artifact-name: modu_left
+
+  - board: ms88sf3/nrf52840
+    shield: modu_right
+    cmake-args: >-
+      "-DZMK_EXTRA_MODULES=${GITHUB_WORKSPACE}/modu-c-firmware/modu-module;${GITHUB_WORKSPACE}/modu-c-firmware/zmk-pmw3610-driver"
+    artifact-name: modu_right

@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="918" height="419" viewBox="0 0 918 419">
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:Arial,sans-serif;fill:#111}.key{fill:#f7f7f7;stroke:#222;stroke-width:1.2}.none{fill:#ddd;stroke:#777;stroke-width:0.8}.title{font-weight:700;font-size:18px}.note{font-size:12px;fill:#555}.label{font-size:11px;text-anchor:middle;dominant-baseline:middle}</style>
+<text x="24" y="18" class="title">MODU-C default layer — Keymap Editor layout</text>
+<rect class="key" x="24.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="51.5" y="67.5">ESC</text>
+<rect class="key" x="82.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="109.5" y="67.5">1</text>
+<rect class="key" x="140.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="167.5" y="67.5">2</text>
+<rect class="key" x="198.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="225.5" y="67.5">3</text>
+<rect class="key" x="256.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="283.5" y="67.5">4</text>
+<rect class="key" x="314.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="341.5" y="67.5">5</text>
+<rect class="key" x="488.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="515.5" y="67.5">6</text>
+<rect class="key" x="546.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="573.5" y="67.5">7</text>
+<rect class="key" x="604.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="631.5" y="67.5">8</text>
+<rect class="key" x="662.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="67.5">9</text>
+<rect class="key" x="720.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="747.5" y="67.5">0</text>
+<rect class="key" x="778.0" y="40.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="805.5" y="67.5">DEL</text>
+<rect class="key" x="24.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="51.5" y="125.5">TAB</text>
+<rect class="key" x="82.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="109.5" y="125.5">Q</text>
+<rect class="key" x="140.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="167.5" y="125.5">W</text>
+<rect class="key" x="198.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="225.5" y="125.5">E</text>
+<rect class="key" x="256.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="283.5" y="125.5">R</text>
+<rect class="key" x="314.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="341.5" y="125.5">T</text>
+<rect class="key" x="488.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="515.5" y="125.5">Y</text>
+<rect class="key" x="546.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="573.5" y="125.5">U</text>
+<rect class="key" x="604.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="631.5" y="125.5">I</text>
+<rect class="key" x="662.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="125.5">O</text>
+<rect class="key" x="720.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="747.5" y="125.5">P</text>
+<rect class="key" x="778.0" y="98.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="805.5" y="125.5">HOME</text>
+<rect class="key" x="24.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="51.5" y="183.5">CAPS</text>
+<rect class="key" x="82.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="109.5" y="183.5">A</text>
+<rect class="key" x="140.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="167.5" y="183.5">S</text>
+<rect class="key" x="198.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="225.5" y="183.5">D</text>
+<rect class="key" x="256.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="283.5" y="183.5">F</text>
+<rect class="key" x="314.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="341.5" y="183.5">G</text>
+<rect class="key" x="488.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="515.5" y="183.5">H</text>
+<rect class="key" x="546.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="573.5" y="183.5">J</text>
+<rect class="key" x="604.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="631.5" y="183.5">K</text>
+<rect class="key" x="662.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="183.5">L</text>
+<rect class="key" x="720.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="747.5" y="183.5">;</text>
+<rect class="key" x="778.0" y="156.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="805.5" y="183.5">PGUP</text>
+<rect class="key" x="24.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="51.5" y="241.5">LSFT</text>
+<rect class="key" x="82.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="109.5" y="241.5">Z</text>
+<rect class="key" x="140.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="167.5" y="241.5">X</text>
+<rect class="key" x="198.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="225.5" y="241.5">C</text>
+<rect class="key" x="256.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="283.5" y="241.5">V</text>
+<rect class="key" x="314.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="341.5" y="241.5">B</text>
+<rect class="key" x="488.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="515.5" y="241.5">N</text>
+<rect class="key" x="546.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="573.5" y="241.5">M</text>
+<rect class="key" x="604.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="631.5" y="241.5">,</text>
+<rect class="key" x="662.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="241.5">.</text>
+<rect class="key" x="720.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="747.5" y="241.5">/</text>
+<rect class="key" x="778.0" y="214.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="805.5" y="241.5">PGDN</text>
+<rect class="key" x="24.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="51.5" y="299.5">LCTL</text>
+<rect class="key" x="82.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="109.5" y="299.5">LALT</text>
+<rect class="key" x="140.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="167.5" y="299.5">LGUI</text>
+<rect class="none" x="348.8" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="none" x="370.8" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="none" x="392.9" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="none" x="414.9" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="none" x="437.0" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="none" x="459.0" y="294.0" width="9.8" height="9.8" rx="5"/>
+<rect class="key" x="662.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="299.5">RALT</text>
+<rect class="key" x="720.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="747.5" y="299.5">RCTL</text>
+<rect class="key" x="778.0" y="272.0" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="805.5" y="299.5">END</text>
+<rect class="key" x="198.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="225.5" y="372.0">LANG</text>
+<rect class="key" x="256.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="283.5" y="372.0">SPACE</text>
+<rect class="key" x="314.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="341.5" y="372.0">MO1</text>
+<rect class="key" x="488.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="515.5" y="372.0">BSPC</text>
+<rect class="key" x="546.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="573.5" y="372.0">RET</text>
+<rect class="key" x="604.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="631.5" y="372.0">MO1</text>
+<rect class="key" x="662.0" y="344.5" width="55.0" height="55.0" rx="5"/>
+<text class="label" x="689.5" y="372.0">B</text>
+<text x="24" y="411" class="note">The six tiny gray cells are required &amp;none placeholders; leave them unchanged.</text>
+</svg>

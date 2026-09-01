@@ -1,0 +1,7 @@
+build/
+outputs/
+firmware/
+*.hex
+*.uf2
+.DS_Store
+Thumbs.db

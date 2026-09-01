@@ -1,0 +1,37 @@
+EKS NON-COMMERCIAL SOURCE LICENSE 1.0
+
+Copyright (c) 2026 EKS Inc.
+Original firmware created by Ryu.
+All Rights Reserved.
+
+This license applies to the MODU-specific source code and other original
+material in this repository (the "Software"). Third-party material identified
+in THIRD_PARTY_NOTICES.md is excluded and remains subject to its respective
+license terms.
+Permission is granted, free of charge, to any person obtaining a copy of the
+Software to view, copy, use, and modify the Software solely for Non-Commercial
+Purposes, subject to the following conditions:
+1. The above copyright notice, creator attribution, this license, and all
+   existing notices must be retained in all copies and modified versions.
+2. Modified versions must be clearly identified as modified and must not be
+   represented as official EKS Inc. releases.
+3. Redistribution of the Software or modified versions is permitted only for
+   Non-Commercial Purposes and only under this same license.
+4. No permission is granted to use the Software or modified versions for any
+   Commercial Purpose without prior written permission from EKS Inc.
+"Non-Commercial Purpose" means a purpose not primarily intended for or
+directed toward commercial advantage or monetary compensation.
+
+"Commercial Purpose" includes, without limitation, manufacturing or selling
+products containing the Software, providing paid services using the Software,
+licensing the Software for a fee, or incorporating the Software into a product
+or service offered for commercial advantage or monetary compensation.
+This license does not grant permission to use the names, logos, or trademarks
+of EKS Inc. or MODU except as necessary for reasonable attribution. No patent
+license is granted.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL EKS
+INC. OR THE CREATOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
