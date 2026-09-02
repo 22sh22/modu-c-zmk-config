@@ -1,6 +1,8 @@
 build/
 outputs/
 firmware/
+__pycache__/
+*.py[cod]
 *.hex
 *.uf2
 .DS_Store

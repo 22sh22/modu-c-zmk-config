@@ -1,6 +1,6 @@
 # Unofficial modification notice
 
-This repository is an unofficial, modified, non-commercial ZMK user-config wrapper created on 2026-09-01.
+This repository is an unofficial, modified, non-commercial ZMK user-config wrapper initially created on 2026-09-01 and audited on 2026-09-02.
 
 It is **not** an official EKS Inc. or MODU release.
 
@@ -14,10 +14,11 @@ It is **not** an official EKS Inc. or MODU release.
 
 ## Modifications in this wrapper
 
-- Copied the original `modu.keymap` into the conventional user-config path `config/modu.keymap`; its bindings were not intentionally changed.
+- Copied the original `modu.keymap` into the conventional user-config path `config/modu.keymap`; its behavior bindings were not intentionally changed.
 - Added Keymap Editor layout metadata for the 67-position `default_transform`.
 - Added a pinned west manifest that fetches the original MODU-C board, shield, custom scanning code, and PMW3610 driver.
-- Added GitHub Actions automation for left/right builds and the same nRF52840 HEX-to-UF2 conversion family used by the original build scripts.
-- Added static consistency validation and Korean setup documentation.
+- Added GitHub Actions automation for left/right builds and the same nRF52840 HEX-to-UF2 family used by the original build scripts.
+- Added exact output selection, Intel HEX validation/normalization, UF2 structural verification, and dependency-free self-tests.
+- Added static consistency checks, license/notice packaging, and Korean setup documentation.
 
 No trademark rights, patent rights, warranty, or endorsement are provided.

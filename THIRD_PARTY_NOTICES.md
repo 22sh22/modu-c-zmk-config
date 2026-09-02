@@ -41,13 +41,13 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## Microsoft UF2 converter
 
-`tools/uf2/uf2conv.py` and `tools/uf2/uf2families.json` are from Microsoft UF2.
+The packaging workflow fetches `tools/uf2/uf2conv.py` and `tools/uf2/uf2families.json` from the pinned MODU-C upstream revision. Those files are derived from Microsoft UF2.
 
 - Source: https://github.com/microsoft/uf2
 - License: MIT
 - Copyright: Microsoft Corporation
 
-The applicable MIT License text is included in `tools/uf2/LICENSE`.
+The applicable MIT License text is included in `LICENSES/MICROSOFT-UF2-MIT.txt`.
 
 ## ZMK Firmware and reusable build workflow
 

@@ -3,7 +3,7 @@
  * Created by Ryu.
  * SPDX-License-Identifier: LicenseRef-EKS-NonCommercial-1.0
  *
- * Unofficial modification, 2026-09-01:
+ * Unofficial modification, audited 2026-09-02:
  * Relocated into a ZMK user-config repository for Keymap Editor and
  * GitHub Actions support. Bindings are unchanged from upstream commit
  * af7d209d8c2fe6c03ef38669f4114b69346ad31d.

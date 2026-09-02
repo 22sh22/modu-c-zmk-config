@@ -4,15 +4,23 @@ name: Build MODU-C ZMK firmware
   push:
     paths:
       - "config/**"
-      - "scripts/validate.py"
+      - "scripts/**"
       - "build.yaml"
       - ".github/workflows/build.yml"
+      - "LICENSE"
+      - "NOTICE.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - "LICENSES/**"
   pull_request:
     paths:
       - "config/**"
-      - "scripts/validate.py"
+      - "scripts/**"
       - "build.yaml"
       - ".github/workflows/build.yml"
+      - "LICENSE"
+      - "NOTICE.md"
+      - "THIRD_PARTY_NOTICES.md"
+      - "LICENSES/**"
   workflow_dispatch:
 
 permissions:
@@ -24,30 +32,41 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate Keymap Editor files
+    name: Validate Keymap Editor and packaging files
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout user config
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Run static checks
+      - name: Run static consistency checks
         run: python3 scripts/validate.py
+
+      - name: Exercise HEX and UF2 safeguards
+        run: python3 scripts/selftest.py
 
   build:
     name: Build both halves
     needs: validate
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@641514a97db345f499dd50b0360e594270f008fe
     with:
+      build_matrix_path: build.yaml
+      config_path: config
       fallback_binary: hex
       archive_name: modu-c-intermediate
 
   package:
-    name: Package flashable UF2 files
+    name: Package and verify flashable UF2 files
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout wrapper and license notices
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Download both build outputs
         uses: actions/download-artifact@v7
@@ -61,42 +80,20 @@ jobs:
           repository: 22sh22/modu-c-firmware
           ref: af7d209d8c2fe6c03ef38669f4114b69346ad31d
           path: upstream
+          persist-credentials: false
           sparse-checkout: |
             tools/uf2
 
-      - name: Use native UF2 or convert HEX to UF2
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p uf2
+      - name: Select, convert, and validate both firmware files
+        run: >-
+          python3 scripts/package_firmware.py
+          --intermediate intermediate
+          --converter upstream/tools/uf2/uf2conv.py
+          --output uf2
+          --family 0xADA52840
 
-          mapfile -t native_uf2 < <(find intermediate -type f -name '*.uf2' | sort)
-          if [[ "${#native_uf2[@]}" -eq 2 ]]; then
-            for file in "${native_uf2[@]}"; do
-              cp "$file" "uf2/$(basename "$file")"
-            done
-          else
-            mapfile -t hex_files < <(find intermediate -type f -name '*.hex' | sort)
-            if [[ "${#hex_files[@]}" -ne 2 ]]; then
-              printf 'Expected two UF2 files or two HEX files. Found %s UF2 and %s HEX.\n' \
-                "${#native_uf2[@]}" "${#hex_files[@]}" >&2
-              find intermediate -maxdepth 3 -type f -print >&2
-              exit 1
-            fi
-
-            for file in "${hex_files[@]}"; do
-              stem="$(basename "${file%.hex}")"
-              python3 upstream/tools/uf2/uf2conv.py \
-                -f 0xADA52840 \
-                -c \
-                -o "uf2/${stem}.uf2" \
-                "$file"
-            done
-          fi
-
-          test -s uf2/modu_left.uf2
-          test -s uf2/modu_right.uf2
-          sha256sum uf2/*.uf2
+      - name: Verify final UF2 files again
+        run: python3 scripts/verify_uf2.py uf2/modu_left.uf2 uf2/modu_right.uf2
 
       - name: Include license and attribution files
         shell: bash
@@ -109,5 +106,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: modu-c-firmware
-          path: uf2/**
+          path: uf2/
           if-no-files-found: error
