@@ -62,6 +62,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: write
+      contents: read
     steps:
       - name: Checkout wrapper and license notices
         uses: actions/checkout@v7
@@ -108,3 +111,18 @@ jobs:
           name: modu-c-firmware
           path: uf2/
           if-no-files-found: error
+
+      - name: Delete intermediate build artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_id="$(
+            gh api \
+              "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts" \
+              --jq '.artifacts[] | select(.name == "modu-c-intermediate") | .id'
+          )"
+          test -n "${artifact_id}"
+          gh api --method DELETE \
+            "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"

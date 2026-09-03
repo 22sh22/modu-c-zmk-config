@@ -281,6 +281,13 @@ def check_build_files() -> None:
         "cp -R LICENSES uf2/LICENSES",
         "name: modu-c-firmware",
         "path: uf2/",
+        "actions: write",
+        "name: Delete intermediate build artifact",
+        "GH_TOKEN: ${{ github.token }}",
+        '/actions/runs/${GITHUB_RUN_ID}/artifacts',
+        'select(.name == "modu-c-intermediate")',
+        "--method DELETE",
+        '/actions/artifacts/${artifact_id}',
     )
     for token in required_workflow_tokens:
         if token not in workflow:
