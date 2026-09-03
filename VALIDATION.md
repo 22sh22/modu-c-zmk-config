@@ -4,7 +4,7 @@ Audited: 2026-09-02
 
 ## Upstream correspondence checked
 
-- `config/modu.keymap` contains the same 134 behavior bindings, in the same order, as the two layers in MODU-C upstream revision `af7d209d8c2fe6c03ef38669f4114b69346ad31d`.
+- `config/modu.keymap` is based on MODU-C upstream revision `bee0bb4b812f63f279eb67e928accc89600b5904` and keeps 67 behavior bindings in every customized layer.
 - Layout metadata contains the exact 67 `(row, col)` entries from the upstream `default_transform`: rows 0–4, columns 0–11, followed by row 5 columns 0, 1, 2, 6, 7, 8, and 9.
 - The build matrix uses the upstream board and shield names exactly: `ms88sf3/nrf52840`, `modu_left`, and `modu_right`.
 - The additional module paths match the original build script: `modu-module` and `zmk-pmw3610-driver`.

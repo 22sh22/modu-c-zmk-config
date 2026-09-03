@@ -9,12 +9,12 @@ It is **not** an official EKS Inc. or MODU release.
 - Project: `22sh22/modu-c-firmware`
 - Original firmware copyright: Copyright (c) 2026 EKS Inc.
 - Original firmware creator: Ryu
-- Pinned upstream revision: `af7d209d8c2fe6c03ef38669f4114b69346ad31d`
+- Pinned upstream revision: `bee0bb4b812f63f279eb67e928accc89600b5904`
 - Original license: EKS NON-COMMERCIAL SOURCE LICENSE 1.0
 
 ## Modifications in this wrapper
 
-- Copied the original `modu.keymap` into the conventional user-config path `config/modu.keymap`; its behavior bindings were not intentionally changed.
+- Copied the original `modu.keymap` into the conventional user-config path `config/modu.keymap`, then customized it through Keymap Editor.
 - Added Keymap Editor layout metadata for the 67-position `default_transform`.
 - Added a pinned west manifest that fetches the original MODU-C board, shield, custom scanning code, and PMW3610 driver.
 - Added GitHub Actions automation for left/right builds and the same nRF52840 HEX-to-UF2 family used by the original build scripts.

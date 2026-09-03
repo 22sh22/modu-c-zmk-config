@@ -78,7 +78,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: 22sh22/modu-c-firmware
-          ref: af7d209d8c2fe6c03ef38669f4114b69346ad31d
+          ref: bee0bb4b812f63f279eb67e928accc89600b5904
           path: upstream
           persist-credentials: false
           sparse-checkout: |

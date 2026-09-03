@@ -11,7 +11,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 ZMK_REVISION = "641514a97db345f499dd50b0360e594270f008fe"
-MODU_REVISION = "af7d209d8c2fe6c03ef38669f4114b69346ad31d"
+MODU_REVISION = "bee0bb4b812f63f279eb67e928accc89600b5904"
 BOARD = "ms88sf3/nrf52840"
 EXPECTED_COORDINATES = [
     *[(row, col) for row in range(5) for col in range(12)],
