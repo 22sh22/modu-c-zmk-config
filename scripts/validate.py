@@ -165,10 +165,14 @@ def check_keymap() -> None:
         "#include <behaviors.dtsi>",
         "#include <dt-bindings/zmk/keys.h>",
         "#include <dt-bindings/zmk/bt.h>",
-        "#include <dt-bindings/zmk/pointing.h>",
     ):
         if include not in text:
             fail(f"config/modu.keymap is missing {include}")
+
+    pointing_include = "#include <dt-bindings/zmk/pointing.h>"
+    uses_pointing = re.search(r"(?<![A-Za-z0-9_])&(mkp|mmv|msc)\b", text)
+    if uses_pointing and pointing_include not in text:
+        fail(f"config/modu.keymap uses a pointing behavior but is missing {pointing_include}")
 
     layers = _keymap_layers(text)
     if len(layers) < 2:
