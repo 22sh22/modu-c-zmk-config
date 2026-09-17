@@ -64,7 +64,7 @@ class StudioValidationTests(unittest.TestCase):
 
     def test_unlock_key_removal_rejected(self):
         self.replace("config/modu.keymap", "&studio_unlock", "&trans")
-        with self.assertRaisesRegex(SystemExit, r"Fn\+R"):
+        with self.assertRaisesRegex(SystemExit, r"layer 1 \+ Ctrl \+ R/T"):
             validate.check_keymap()
 
 

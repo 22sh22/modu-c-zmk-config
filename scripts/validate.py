@@ -230,14 +230,21 @@ def check_keymap() -> None:
             f"{PLACEHOLDER_INDICES}; found {none_indices}"
         )
 
-    # These bindings make the documented first connection possible even while
-    # the keyboard is also bonded to a BLE host.
-    if layers[1][1][16] != "studio_unlock":
-        fail("the Studio test keymap must retain Fn+R as studio_unlock")
+    # Follow the existing layer-1 + left-Ctrl access path used by 5/6.
+    if len(layers) != 3 or layers[2][0] != "layer_2":
+        fail("the Studio test keymap must retain the existing three layers")
     lower = re.search(r"lower_layer\s*\{(.*?)\};", _strip_comments(text), re.DOTALL)
     bindings = re.findall(r"&\w+[^&>]*", lower.group(1).split("bindings", 1)[1])
-    if bindings[17].strip() != "&out OUT_USB" or bindings[29].strip() != "&out OUT_BLE":
-        fail("the Studio test keymap must retain Fn+T USB and Fn+G BLE output selection")
+    if bindings[48].strip() != "&mo 2":
+        fail("layer 1 left Ctrl must retain its existing &mo 2 binding")
+    if any(bindings[index].strip() != "&trans" for index in (16, 17, 29)):
+        fail("layer 1 R/T/G must retain their original transparent bindings")
+    service = re.search(r"layer_2\s*\{(.*?)\};", _strip_comments(text), re.DOTALL)
+    bindings = re.findall(r"&\w+[^&>]*", service.group(1).split("bindings", 1)[1])
+    if bindings[16].strip() != "&studio_unlock" or bindings[17].strip() != "&out OUT_USB":
+        fail("layer 1 + Ctrl + R/T must provide Studio unlock/USB output")
+    if any(bindings[index].strip() != "&bootloader" for index in (5, 6)):
+        fail("the existing layer 1 + Ctrl + 5/6 bootloader keys must be preserved")
 
 
 def _parse_build_entries(text: str) -> list[dict[str, str]]:

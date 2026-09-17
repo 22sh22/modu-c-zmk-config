@@ -10,9 +10,11 @@ MODU-C 원본 펌웨어 전체를 복사하는 대신, 일부 파일을 불러�
 Actions에서 **이 브랜치의 성공한 실행**을 선택하고 `modu-c-firmware` 아티팩트의
 좌우 UF2를 해당 기기에 설치한 뒤, 왼쪽을 USB 데이터 케이블로 연결하십시오.
 
-- 기본 키맵의 Fn(엄지 `MO1`)을 누른 채 `T`: USB 출력 선택
-- [ZMK Studio](https://zmk.studio/)에서 연결한 뒤 Fn+`R`: 잠금 해제
-- Fn+`G`: BLE 출력 선택
+- `layer 1 + 왼쪽 Ctrl + T`: USB 출력 선택
+- [ZMK Studio](https://zmk.studio/)에서 연결한 뒤 `layer 1 + 왼쪽 Ctrl + R`: 잠금 해제
+
+기존 5/6 부트로더 키와 같은 접근 방식입니다. 엄지 `MO1`로 layer 1을 누른 상태에서
+왼쪽 Ctrl 위치의 키를 누르고 T 또는 R을 누릅니다.
 
 세부 절차, 저장/복원 동작 및 실기기 확인 항목은 [Studio 테스트 안내](docs/STUDIO_TEST.md)를 참고하십시오.
 기존 67개 논리 위치와 썸클러스터 방향 보정, 양쪽 트랙볼 설정은 유지합니다.

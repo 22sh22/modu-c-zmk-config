@@ -49,11 +49,10 @@
         };
 
         lower_layer {
-            // Fn+R: unlock Studio; Fn+T: USB output; Fn+G: BLE output.
             bindings = <
 &kp F1      &kp F2        &kp F3        &kp F4        &kp F5  &kp F6  &kp F7     &kp F8         &kp F9     &kp F10    &kp F11          &kp F12
-&trans      &kp HOME      &kp UP        &kp END       &studio_unlock  &out OUT_USB  &mkp MCLK  &kp KP_N7      &kp KP_N8  &kp KP_N9  &kp KP_PLUS      &kp BSPC
-&trans      &kp LEFT      &kp DOWN      &kp RIGHT     &trans          &out OUT_BLE  &mkp RCLK  &kp KP_N4      &kp KP_N5  &kp KP_N6  &kp KP_MINUS     &kp KP_COMMA
+&trans      &kp HOME      &kp UP        &kp END       &trans  &trans  &mkp MCLK  &kp KP_N7      &kp KP_N8  &kp KP_N9  &kp KP_PLUS      &kp BSPC
+&trans      &kp LEFT      &kp DOWN      &kp RIGHT     &trans  &trans  &mkp RCLK  &kp KP_N4      &kp KP_N5  &kp KP_N6  &kp KP_MINUS     &kp KP_COMMA
 &bt BT_CLR  &bt BT_SEL 0  &bt BT_SEL 1  &bt BT_SEL 2  &trans  &trans  &mkp LCLK  &kp KP_N1      &kp KP_N2  &kp KP_N3  &kp KP_MULTIPLY  &kp KP_DOT
 &mo 2       &trans        &trans        &trans        &trans  &trans  &trans     &trans         &trans     &kp KP_N0  &kp KP_DIVIDE    &kp KP_ENTER
 &trans      &trans        &trans                                      &kp ENTER  &kp BACKSPACE  &trans     &trans
@@ -61,9 +60,11 @@
         };
 
         layer_2 {
+            // Hold layer 1, then the left Ctrl position (&mo 2).
+            // R: Studio unlock; T: USB output. Existing 5/6 bootloader keys remain.
             bindings = <
 &trans  &trans  &trans  &trans  &trans  &bootloader  &bootloader  &trans  &trans  &trans  &trans  &trans
-&trans  &trans  &trans  &trans  &trans  &trans       &trans       &trans  &trans  &trans  &trans  &trans
+&trans  &trans  &trans  &trans  &studio_unlock  &out OUT_USB  &trans  &trans  &trans  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans       &trans       &trans  &trans  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans       &trans       &trans  &trans  &trans  &trans  &trans
 &trans  &trans  &trans  &trans  &trans  &trans       &trans       &trans  &trans  &trans  &trans  &trans
