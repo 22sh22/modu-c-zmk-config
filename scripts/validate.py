@@ -194,11 +194,14 @@ def check_keymap() -> None:
 
 
 def _parse_build_entries(text: str) -> list[dict[str, str]]:
+    # This intentionally checks the repository's small, fixed YAML shape.
+    # Folded CMake arguments may span lines; snippet is optional per half.
     pattern = re.compile(
         r"(?ms)^  - board:\s*(?P<board>\S+)\s*$\n"
         r"^    shield:\s*(?P<shield>\S+)\s*$\n"
+        r"(?:^    snippet:[ \t]*(?P<snippet>\S+)[ \t]*\n)?"
         r"^    cmake-args:\s*>-\s*$\n"
-        r"^      (?P<cmake>[^\n]+)\s*$\n"
+        r"(?P<cmake>(?:^      [^\n]+\n)+)"
         r"^    artifact-name:\s*(?P<artifact>\S+)\s*$"
     )
     return [match.groupdict() for match in pattern.finditer(text)]
@@ -243,14 +246,22 @@ def check_build_files() -> None:
         "${GITHUB_WORKSPACE}/modu-c-firmware/zmk-pmw3610-driver"
     )
     for entry in entries:
+        if not entry["cmake"].lstrip().startswith(f'"{expected_cmake}"'):
+            fail(f"cmake-args for {entry['shield']} must quote the CMake module list")
         try:
             parsed = shlex.split(entry["cmake"])
         except ValueError as exc:
             fail(f"invalid cmake-args quoting for {entry['shield']}: {exc}")
-        if parsed != [expected_cmake]:
+        central = entry["shield"] == "modu_left"
+        expected_args = [expected_cmake] + (["-DCONFIG_ZMK_STUDIO=y"] if central else [])
+        if parsed != expected_args:
             fail(
-                f"cmake-args for {entry['shield']} must be one quoted CMake-list argument"
+                f"cmake-args for {entry['shield']} must preserve the quoted module list "
+                "and enable Studio only on the central"
             )
+        expected_snippet = "studio-rpc-usb-uart" if central else None
+        if entry.get("snippet") != expected_snippet:
+            fail("studio-rpc-usb-uart must be enabled only for modu_left")
 
     west_text = (ROOT / "config/west.yml").read_text(encoding="utf-8")
     zmk = _manifest_project(west_text, "zmk")
