@@ -44,6 +44,9 @@ jobs:
       - name: Run static consistency checks
         run: python3 scripts/validate.py
 
+      - name: Exercise Studio configuration safeguards
+        run: python3 scripts/test_validate.py
+
       - name: Exercise HEX and UF2 safeguards
         run: python3 scripts/selftest.py
 
