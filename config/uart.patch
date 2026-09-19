@@ -1,0 +1,1807 @@
+diff --git a/zmk/app/include/zmk/split/transport/peripheral.h b/zmk/app/include/zmk/split/transport/peripheral.h
+index fdc3943d..3aa32776 100644
+--- a/zmk/app/include/zmk/split/transport/peripheral.h
++++ b/zmk/app/include/zmk/split/transport/peripheral.h
+@@ -12,6 +12,10 @@
+ 
+ struct zmk_split_transport_peripheral;
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++void zmk_split_peripheral_get_position_state(uint8_t state[ZMK_SPLIT_POSITION_STATE_BYTES]);
++#endif
++
+ typedef int (*zmk_split_transport_peripheral_status_changed_cb_t)(
+     const struct zmk_split_transport_peripheral *transport,
+     struct zmk_split_transport_status status);
+diff --git a/zmk/app/include/zmk/split/transport/types.h b/zmk/app/include/zmk/split/transport/types.h
+index 1d6eb734..91cf6551 100644
+--- a/zmk/app/include/zmk/split/transport/types.h
++++ b/zmk/app/include/zmk/split/transport/types.h
+@@ -25,17 +25,38 @@ struct zmk_split_transport_status {
+ typedef struct zmk_split_transport_status (*zmk_split_transport_get_status_t)(void);
+ typedef int (*zmk_split_transport_set_enabled_t)(bool enabled);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++/* Match the existing BLE split characteristic's 128-position bitmap. */
++#define ZMK_SPLIT_POSITION_STATE_BYTES 16
++struct zmk_split_link_control {
++    uint8_t version;
++    uint8_t phase;
++    uint32_t sequence;
++} __packed;
++#endif
++
+ enum zmk_split_transport_peripheral_event_type {
+     ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT,
+     ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT,
+     ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT,
+     ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_BATTERY_EVENT,
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE,
++    ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL,
++#endif
+ };
+ 
+ struct zmk_split_transport_peripheral_event {
+     enum zmk_split_transport_peripheral_event_type type;
+ 
+     union {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        uint8_t position_state[ZMK_SPLIT_POSITION_STATE_BYTES];
++        struct {
++            struct zmk_split_link_control control;
++            uint8_t position_state[ZMK_SPLIT_POSITION_STATE_BYTES];
++        } link;
++#endif
+         struct {
+             uint8_t position;
+             uint8_t pressed;
+@@ -66,12 +87,18 @@ enum zmk_split_transport_central_command_type {
+     ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_INVOKE_BEHAVIOR,
+     ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_SET_PHYSICAL_LAYOUT,
+     ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_SET_HID_INDICATORS,
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_LINK_CONTROL,
++#endif
+ } __packed;
+ 
+ struct zmk_split_transport_central_command {
+     enum zmk_split_transport_central_command_type type;
+ 
+     union {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        struct zmk_split_link_control link;
++#endif
+         struct {
+             char behavior_dev[16];
+             uint32_t param1, param2;
+@@ -88,4 +115,4 @@ struct zmk_split_transport_central_command {
+             zmk_hid_indicators_t indicators;
+         } set_hid_indicators;
+     } data;
+-} __packed;
+\ No newline at end of file
++} __packed;
+diff --git a/zmk/app/src/split/bluetooth/central.c b/zmk/app/src/split/bluetooth/central.c
+index b4b61ce7..f04488c2 100644
+--- a/zmk/app/src/split/bluetooth/central.c
++++ b/zmk/app/src/split/bluetooth/central.c
+@@ -131,6 +131,9 @@ void release_peripheral_input_subs(struct bt_conn *conn) {
+ 
+ static zmk_split_transport_central_status_changed_cb_t transport_status_cb;
+ static bool is_enabled;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++static uint32_t transport_generation;
++#endif
+ 
+ static struct peripheral_slot peripherals[ZMK_SPLIT_BLE_PERIPHERAL_COUNT];
+ 
+@@ -140,6 +143,9 @@ static const struct bt_uuid_128 split_service_uuid = BT_UUID_INIT_128(ZMK_SPLIT_
+ 
+ struct peripheral_event_wrapper {
+     uint8_t source;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    uint32_t generation;
++#endif
+     struct zmk_split_transport_peripheral_event event;
+ };
+ 
+@@ -189,6 +195,16 @@ int release_peripheral_slot(int index) {
+     slot->state = PERIPHERAL_SLOT_STATE_OPEN;
+ 
+     // Raise events releasing any active positions from this peripheral
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (is_enabled) {
++        struct peripheral_event_wrapper ev = {
++            .source = index,
++            .generation = transport_generation,
++            .event = {.type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE}};
++        k_msgq_put(&peripheral_event_msgq, &ev, K_NO_WAIT);
++        k_work_submit(&peripheral_event_work);
++    }
++#else
+     for (int i = 0; i < POSITION_STATE_DATA_LEN; i++) {
+         for (int j = 0; j < 8; j++) {
+             if (slot->position_state[i] & BIT(j)) {
+@@ -207,6 +223,7 @@ int release_peripheral_slot(int index) {
+         }
+     }
+ 
++#endif
+     for (int i = 0; i < POSITION_STATE_DATA_LEN; i++) {
+         slot->position_state[i] = 0U;
+         slot->changed_positions[i] = 0U;
+@@ -350,6 +367,12 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
+                                          struct bt_gatt_subscribe_params *params, const void *data,
+                                          uint16_t length) {
+     struct peripheral_slot *slot = peripheral_slot_for_conn(conn);
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    uint32_t generation = transport_generation;
++    if (!is_enabled) {
++        return BT_GATT_ITER_CONTINUE;
++    }
++#endif
+ 
+     if (slot == NULL) {
+         LOG_ERR("No peripheral state found for connection");
+@@ -364,6 +387,25 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
+ 
+     LOG_DBG("[NOTIFICATION] data %p length %u", data, length);
+ 
++    if (length != POSITION_STATE_DATA_LEN) {
++        return BT_GATT_ITER_CONTINUE;
++    }
++
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    struct peripheral_event_wrapper ev = {
++        .source = peripheral_slot_index_for_conn(conn),
++        .generation = generation,
++        .event = {.type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE}};
++    memcpy(ev.event.data.position_state, data, POSITION_STATE_DATA_LEN);
++    memcpy(slot->position_state, data, POSITION_STATE_DATA_LEN);
++    if (k_msgq_put(&peripheral_event_msgq, &ev, K_NO_WAIT) < 0) {
++        struct peripheral_event_wrapper discarded;
++        k_msgq_get(&peripheral_event_msgq, &discarded, K_NO_WAIT);
++        k_msgq_put(&peripheral_event_msgq, &ev, K_NO_WAIT);
++    }
++    k_work_submit(&peripheral_event_work);
++#else
++
+     for (int i = 0; i < POSITION_STATE_DATA_LEN; i++) {
+         slot->changed_positions[i] = ((uint8_t *)data)[i] ^ slot->position_state[i];
+         slot->position_state[i] = ((uint8_t *)data)[i];
+@@ -388,6 +430,7 @@ static uint8_t split_central_notify_func(struct bt_conn *conn,
+         }
+     }
+ 
++#endif
+     return BT_GATT_ITER_CONTINUE;
+ }
+ 
+@@ -1028,6 +1071,11 @@ void split_central_split_run_callback(struct k_work *work) {
+     LOG_DBG("");
+ 
+     while (k_msgq_get(&zmk_split_central_split_run_msgq, &payload_wrapper, K_NO_WAIT) == 0) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        if (!is_enabled) {
++            continue;
++        }
++#endif
+         if (peripherals[payload_wrapper.source].state != PERIPHERAL_SLOT_STATE_CONNECTED) {
+             LOG_ERR("Source not connected");
+             continue;
+@@ -1203,6 +1251,11 @@ static int split_central_bt_get_available_source_ids(uint8_t *sources) {
+ }
+ 
+ static int split_central_bt_set_enabled(bool enabled) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    ++transport_generation;
++    k_msgq_purge(&peripheral_event_msgq);
++    k_msgq_purge(&zmk_split_central_split_run_msgq);
++#endif
+     is_enabled = enabled;
+     if (enabled) {
+         return start_scanning();
+@@ -1284,6 +1337,13 @@ static int finish_init() {
+ void peripheral_event_work_callback(struct k_work *work) {
+     struct peripheral_event_wrapper ev;
+     while (k_msgq_get(&peripheral_event_msgq, &ev, K_NO_WAIT) == 0) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        if (!is_enabled ||
++            (ev.event.type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE &&
++             ev.generation != transport_generation)) {
++            continue;
++        }
++#endif
+         LOG_DBG("Trigger key position state change of type %d", ev.event.type);
+         zmk_split_transport_central_peripheral_event_handler(&bt_central, ev.source, ev.event);
+     }
+diff --git a/zmk/app/src/split/bluetooth/peripheral.c b/zmk/app/src/split/bluetooth/peripheral.c
+index 0d3ad2de..ad74c46d 100644
+--- a/zmk/app/src/split/bluetooth/peripheral.c
++++ b/zmk/app/src/split/bluetooth/peripheral.c
+@@ -76,6 +76,11 @@ static bool low_duty_advertising = false;
+ static bool enabled = false;
+ 
+ static void advertising_cb(struct k_work *work) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (!enabled) {
++        return;
++    }
++#endif
+     const int err = start_advertising(low_duty_advertising);
+     if (err < 0) {
+         LOG_ERR("Failed to start advertising (%d)", err);
+@@ -163,20 +168,32 @@ split_peripheral_bt_set_status_callback(zmk_split_transport_peripheral_status_ch
+     return 0;
+ }
+ 
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+ static void find_first_conn(struct bt_conn *conn, void *data) {
+     struct bt_conn **cp = (struct bt_conn **)data;
+ 
+     *cp = conn;
+ }
++#endif
+ 
+ static int split_peripheral_bt_set_enabled(bool en) {
+     int err;
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    zmk_split_bt_clear_position_queue();
++#endif
++
+     enabled = en;
+     if (en) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        if (is_connected) {
++            return 0;
++        }
++#endif
+         k_work_submit(&advertising_work);
+         return 0;
+     } else {
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+         struct bt_conn *conn = NULL;
+         bt_conn_foreach(BT_CONN_TYPE_LE, find_first_conn, &conn);
+         if (conn) {
+@@ -185,6 +202,16 @@ static int split_peripheral_bt_set_enabled(bool en) {
+                 LOG_WRN("Failed to disconnect connection to central (%d)", err);
+             }
+         }
++#endif
++
++        /* With handshake, the central closes the existing split BLE connection
++         * only
++         * AFTER receiving COMMIT's ACK. Closing it here could release held
++         * keys on the
++         * central before it receives that ACK. If the ACK is lost,
++         * the lease expires and
++         * this same BLE connection remains a fallback.
++         */
+ 
+         err = bt_le_adv_stop();
+ 
+diff --git a/zmk/app/src/split/bluetooth/service.c b/zmk/app/src/split/bluetooth/service.c
+index 5bbed137..67bebe92 100644
+--- a/zmk/app/src/split/bluetooth/service.c
++++ b/zmk/app/src/split/bluetooth/service.c
+@@ -25,8 +25,17 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ #include <zmk/split/transport/peripheral.h>
+ #include <zmk/split/bluetooth/uuid.h>
+ #include <zmk/split/bluetooth/service.h>
++#include <zmk/split/bluetooth/peripheral.h>
+ 
+ #include "peripheral.h"
++#include "service.h"
++
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++extern const struct zmk_split_transport_peripheral *active_transport;
++static bool ble_is_selected(void) {
++    return active_transport == zmk_split_transport_peripheral_bt();
++}
++#endif
+ 
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_PERIPHERAL_HID_INDICATORS)
+ #include <zmk/events/hid_indicators_changed.h>
+@@ -58,8 +67,14 @@ static struct zmk_split_run_behavior_payload behavior_run_payload;
+ 
+ static ssize_t split_svc_pos_state(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
+                                    void *buf, uint16_t len, uint16_t offset) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    uint8_t state[POS_STATE_LEN];
++    zmk_split_peripheral_get_position_state(state);
++    return bt_gatt_attr_read(conn, attrs, buf, len, offset, state, sizeof(state));
++#else
+     return bt_gatt_attr_read(conn, attrs, buf, len, offset, &position_state,
+                              sizeof(position_state));
++#endif
+ }
+ 
+ static ssize_t split_svc_run_behavior(struct bt_conn *conn, const struct bt_gatt_attr *attrs,
+@@ -80,6 +95,11 @@ static void split_svc_pos_state_ccc(const struct bt_gatt_attr *attr, uint16_t va
+ static zmk_hid_indicators_t hid_indicators = 0;
+ 
+ static void split_svc_update_indicators_callback(struct k_work *work) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (!ble_is_selected()) {
++        return;
++    }
++#endif
+     LOG_DBG("Raising HID indicators changed event: %x", hid_indicators);
+     raise_zmk_hid_indicators_changed(
+         (struct zmk_hid_indicators_changed){.indicators = hid_indicators});
+@@ -106,6 +126,11 @@ static ssize_t split_svc_update_indicators(struct bt_conn *conn, const struct bt
+ static uint8_t selected_phys_layout = 0;
+ 
+ static void split_svc_select_phys_layout_callback(struct k_work *work) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (!ble_is_selected()) {
++        return;
++    }
++#endif
+     LOG_DBG("Selecting physical layout after GATT write of %d", selected_phys_layout);
+     zmk_physical_layouts_select(selected_phys_layout);
+ }
+@@ -214,10 +239,20 @@ struct k_work_q service_work_q;
+ K_MSGQ_DEFINE(position_state_msgq, sizeof(char[POS_STATE_LEN]),
+               CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_POSITION_QUEUE_SIZE, 4);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++void zmk_split_bt_clear_position_queue(void) { k_msgq_purge(&position_state_msgq); }
++#endif
++
+ void send_position_state_callback(struct k_work *work) {
+     uint8_t state[POS_STATE_LEN];
+ 
+     while (k_msgq_get(&position_state_msgq, &state, K_NO_WAIT) == 0) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        if (!ble_is_selected()) {
++            zmk_split_bt_clear_position_queue();
++            return;
++        }
++#endif
+         int err = bt_gatt_notify(NULL, &split_svc.attrs[1], &state, sizeof(state));
+         if (err) {
+             LOG_DBG("Error notifying %d", err);
+@@ -228,6 +263,25 @@ void send_position_state_callback(struct k_work *work) {
+ K_WORK_DEFINE(service_position_notify_work, send_position_state_callback);
+ 
+ int send_position_state() {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    unsigned int key = irq_lock();
++    if (!ble_is_selected()) {
++        irq_unlock(key);
++        return -ENOTCONN;
++    }
++    uint8_t state[POS_STATE_LEN];
++    zmk_split_peripheral_get_position_state(state);
++    int err = k_msgq_put(&position_state_msgq, state, K_NO_WAIT);
++    if (err < 0) {
++        uint8_t discarded[POS_STATE_LEN];
++        k_msgq_get(&position_state_msgq, discarded, K_NO_WAIT);
++        err = k_msgq_put(&position_state_msgq, state, K_NO_WAIT);
++    }
++    irq_unlock(key);
++    if (err < 0) {
++        return err;
++    }
++#else
+     int err = k_msgq_put(&position_state_msgq, position_state, K_MSEC(100));
+     if (err) {
+         switch (err) {
+@@ -242,6 +296,7 @@ int send_position_state() {
+             return err;
+         }
+     }
++#endif
+ 
+     k_work_submit_to_queue(&service_work_q, &service_position_notify_work);
+ 
+@@ -249,12 +304,16 @@ int send_position_state() {
+ }
+ 
+ static int zmk_split_bt_position_pressed(uint8_t position) {
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     WRITE_BIT(position_state[position / 8], position % 8, true);
++#endif
+     return send_position_state();
+ }
+ 
+ static int zmk_split_bt_position_released(uint8_t position) {
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     WRITE_BIT(position_state[position / 8], position % 8, false);
++#endif
+     return send_position_state();
+ }
+ 
+@@ -334,12 +393,31 @@ static int zmk_split_bt_report_input(uint8_t reg, uint8_t type, uint16_t code, i
+ 
+ #endif /* IS_ENABLED(CONFIG_ZMK_INPUT_SPLIT) */
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++/* Restore held keys after fallback/reconnect even when there is no new edge.
++ * No split key
++ * notifications are sent while UART is selected. */
++static void refresh_positions(struct k_work *work);
++static K_WORK_DELAYABLE_DEFINE(position_refresh_work, refresh_positions);
++static void refresh_positions(struct k_work *work) {
++    if (ble_is_selected() && zmk_split_bt_peripheral_is_connected() &&
++        k_msgq_num_used_get(&position_state_msgq) == 0) {
++        send_position_state();
++    }
++    k_work_reschedule_for_queue(&service_work_q, &position_refresh_work, K_MSEC(250));
++}
++#endif
++
+ static int service_init(void) {
+     static const struct k_work_queue_config queue_config = {
+         .name = "Split Peripheral Notification Queue"};
+     k_work_queue_start(&service_work_q, service_q_stack, K_THREAD_STACK_SIZEOF(service_q_stack),
+                        CONFIG_ZMK_SPLIT_BLE_PERIPHERAL_PRIORITY, &queue_config);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_work_schedule_for_queue(&service_work_q, &position_refresh_work, K_MSEC(250));
++#endif
++
+     return 0;
+ }
+ 
+@@ -434,4 +512,4 @@ static ssize_t split_svc_run_behavior(struct bt_conn *conn, const struct bt_gatt
+     }
+ 
+     return len;
+-}
+\ No newline at end of file
++}
+diff --git a/zmk/app/src/split/bluetooth/service.h b/zmk/app/src/split/bluetooth/service.h
+index 20ff7513..da9d1868 100644
+--- a/zmk/app/src/split/bluetooth/service.h
++++ b/zmk/app/src/split/bluetooth/service.h
+@@ -9,4 +9,8 @@
+ #include <zmk/split/transport/types.h>
+ 
+ int zmk_split_transport_peripheral_bt_report_event(
+-    const struct zmk_split_transport_peripheral_event *ev);
+\ No newline at end of file
++    const struct zmk_split_transport_peripheral_event *ev);
++
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++void zmk_split_bt_clear_position_queue(void);
++#endif
+diff --git a/zmk/app/src/split/central.c b/zmk/app/src/split/central.c
+index e2b80643..dbe0db9a 100644
+--- a/zmk/app/src/split/central.c
++++ b/zmk/app/src/split/central.c
+@@ -11,6 +11,7 @@
+ #include <zmk/split/central.h>
+ #include <zmk/hid_indicators_types.h>
+ #include <zmk/pointing/input_split.h>
++#include <zmk/matrix.h>
+ 
+ #include <zephyr/logging/log.h>
+ 
+@@ -23,28 +24,77 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ 
+ const struct zmk_split_transport_central *active_transport;
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++BUILD_ASSERT(ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT == 1,
++             "UART handshake currently supports one peripheral only");
++BUILD_ASSERT(ZMK_KEYMAP_LEN <= ZMK_SPLIT_POSITION_STATE_BYTES * 8,
++             "Position snapshot must cover the whole keymap");
++static K_MUTEX_DEFINE(transport_lock);
++static uint8_t reported_positions[ZMK_SPLIT_POSITION_STATE_BYTES];
++
++static int report_position(uint8_t source, uint32_t position, bool pressed) {
++    if (source != 0 || position >= ZMK_KEYMAP_LEN) {
++        return -EINVAL;
++    }
++    bool previous = (reported_positions[position / 8] & BIT(position % 8)) != 0;
++    if (previous == pressed) {
++        return 0;
++    }
++    WRITE_BIT(reported_positions[position / 8], position % 8, pressed);
++    return raise_zmk_position_state_changed((struct zmk_position_state_changed){
++        .source = source, .position = position, .state = pressed, .timestamp = k_uptime_get()});
++}
++
++static void release_positions(void) {
++    for (uint32_t position = 0; position < ZMK_KEYMAP_LEN; ++position) {
++        report_position(0, position, false);
++    }
++}
++#endif
++
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+ 
+ static uint8_t peripheral_battery_levels[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT] = {0};
+ 
+ #endif // IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+ 
+-int zmk_split_transport_central_peripheral_event_handler(
+-    const struct zmk_split_transport_central *transport, uint8_t source,
+-    struct zmk_split_transport_peripheral_event ev) {
++static int peripheral_event_handler(const struct zmk_split_transport_central *transport,
++                                    uint8_t source,
++                                    struct zmk_split_transport_peripheral_event ev) {
+     if (transport != active_transport) {
+         // Ignoring events from non-active transport
+         LOG_WRN("Ignoring peripheral event from non-active transport");
+         return -EINVAL;
+     }
+     switch (ev.type) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE:
++        if (source != 0) {
++            return -EINVAL;
++        }
++        /* Reconcile instead of releasing/re-pressing held modifiers or layers. */
++        for (int pressed = 0; pressed <= 1; ++pressed) {
++            for (uint32_t position = 0; position < ZMK_KEYMAP_LEN; ++position) {
++                bool state = (ev.data.position_state[position / 8] & BIT(position % 8)) != 0;
++                if (state == pressed) {
++                    report_position(source, position, state);
++                }
++            }
++        }
++        return 0;
++#endif
+     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT: {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        return report_position(source, ev.data.key_position_event.position,
++                               ev.data.key_position_event.pressed);
++#else
+         struct zmk_position_state_changed state_ev = {.source = source,
+                                                       .position =
+                                                           ev.data.key_position_event.position,
+                                                       .state = ev.data.key_position_event.pressed,
+                                                       .timestamp = k_uptime_get()};
+         return raise_zmk_position_state_changed(state_ev);
++#endif
+     }
+ #if IS_ENABLED(CONFIG_ZMK_INPUT_SPLIT)
+     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT: {
+@@ -78,6 +128,19 @@ int zmk_split_transport_central_peripheral_event_handler(
+     }
+ }
+ 
++int zmk_split_transport_central_peripheral_event_handler(
++    const struct zmk_split_transport_central *transport, uint8_t source,
++    struct zmk_split_transport_peripheral_event ev) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_lock(&transport_lock, K_FOREVER);
++#endif
++    int ret = peripheral_event_handler(transport, source, ev);
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_unlock(&transport_lock);
++#endif
++    return ret;
++}
++
+ int zmk_split_central_invoke_behavior(uint8_t source, struct zmk_behavior_binding *binding,
+                                       struct zmk_behavior_binding_event event, bool state) {
+     if (!active_transport || !active_transport->api || !active_transport->api->send_command) {
+@@ -163,7 +226,7 @@ int zmk_split_central_get_peripheral_battery_level(uint8_t source, uint8_t *leve
+ 
+ #endif // IS_ENABLED(CONFIG_ZMK_SPLIT_BLE_CENTRAL_BATTERY_LEVEL_FETCHING)
+ 
+-static int select_first_available_transport(void) {
++static int select_first_available_transport_locked(void) {
+     // Transports are sorted by priority, so find the first
+     // One that's available, and enable it. Any transport that
+     // Doesn't support `get_status` is assumed to be always
+@@ -176,6 +239,15 @@ static int select_first_available_transport(void) {
+                 return 0;
+             }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++            if (active_transport && active_transport->api->get_status) {
++                struct zmk_split_transport_status old_status = active_transport->api->get_status();
++                if (!old_status.available ||
++                    old_status.connections == ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_DISCONNECTED) {
++                    release_positions();
++                }
++            }
++#endif
+             if (active_transport && active_transport->api->set_enabled) {
+                 int err = active_transport->api->set_enabled(false);
+                 if (err < 0) {
+@@ -193,15 +265,39 @@ static int select_first_available_transport(void) {
+         }
+     }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    const struct zmk_split_transport_central *previous = active_transport;
++    active_transport = NULL;
++    release_positions();
++    if (previous && previous->api->set_enabled) {
++        previous->api->set_enabled(false);
++    }
++#endif
+     return -ENODEV;
+ }
+ 
++static int select_first_available_transport(void) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_lock(&transport_lock, K_FOREVER);
++#endif
++    int ret = select_first_available_transport_locked();
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_unlock(&transport_lock);
++#endif
++    return ret;
++}
++
+ static int transport_status_changed_cb(const struct zmk_split_transport_central *central,
+                                        struct zmk_split_transport_status status) {
+     if (central == active_transport) {
+         LOG_DBG("Central at %p changed status: enabled %d, available %d, connections %d", central,
+                 status.enabled, status.available, status.connections);
+         if (status.connections == ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_DISCONNECTED) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++            k_mutex_lock(&transport_lock, K_FOREVER);
++            release_positions();
++            k_mutex_unlock(&transport_lock);
++#endif
+             return select_first_available_transport();
+         }
+     } else {
+diff --git a/zmk/app/src/split/peripheral.c b/zmk/app/src/split/peripheral.c
+index b814df61..cf098bf9 100644
+--- a/zmk/app/src/split/peripheral.c
++++ b/zmk/app/src/split/peripheral.c
+@@ -12,6 +12,7 @@
+ #include <drivers/behavior.h>
+ #include <zmk/behavior.h>
+ #include <zmk/physical_layouts.h>
++#include <zmk/matrix.h>
+ 
+ #include <zmk/event_manager.h>
+ #include <zmk/events/position_state_changed.h>
+@@ -29,11 +30,29 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ 
+ const struct zmk_split_transport_peripheral *active_transport;
+ 
+-int zmk_split_transport_peripheral_command_handler(
+-    const struct zmk_split_transport_peripheral *transport,
+-    struct zmk_split_transport_central_command cmd) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++BUILD_ASSERT(ZMK_KEYMAP_LEN <= ZMK_SPLIT_POSITION_STATE_BYTES * 8,
++             "Position snapshot must cover the whole keymap");
++static uint8_t position_state[ZMK_SPLIT_POSITION_STATE_BYTES];
++static K_MUTEX_DEFINE(transport_lock);
++
++void zmk_split_peripheral_get_position_state(uint8_t state[ZMK_SPLIT_POSITION_STATE_BYTES]) {
++    unsigned int key = irq_lock();
++    memcpy(state, position_state, sizeof(position_state));
++    irq_unlock(key);
++}
++#endif
++
++static int command_handler(const struct zmk_split_transport_peripheral *transport,
++                           struct zmk_split_transport_central_command cmd) {
+     LOG_DBG("");
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (transport != active_transport) {
++        return -ENOTCONN;
++    }
++#endif
++
+     switch (cmd.type) {
+     case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_INVOKE_BEHAVIOR: {
+         struct zmk_behavior_binding binding = {
+@@ -73,7 +92,20 @@ int zmk_split_transport_peripheral_command_handler(
+     return 0;
+ }
+ 
+-int zmk_split_peripheral_report_event(const struct zmk_split_transport_peripheral_event *event) {
++int zmk_split_transport_peripheral_command_handler(
++    const struct zmk_split_transport_peripheral *transport,
++    struct zmk_split_transport_central_command cmd) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_lock(&transport_lock, K_FOREVER);
++#endif
++    int ret = command_handler(transport, cmd);
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_unlock(&transport_lock);
++#endif
++    return ret;
++}
++
++static int report_event(const struct zmk_split_transport_peripheral_event *event) {
+     if (!active_transport || !active_transport->api || !active_transport->api->report_event) {
+         LOG_WRN("No active transport that supports reporting events!");
+         return -ENODEV;
+@@ -82,7 +114,29 @@ int zmk_split_peripheral_report_event(const struct zmk_split_transport_periphera
+     return active_transport->api->report_event(event);
+ }
+ 
+-static int select_first_available_transport(void) {
++int zmk_split_peripheral_report_event(const struct zmk_split_transport_peripheral_event *event) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_lock(&transport_lock, K_FOREVER);
++    if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT) {
++        uint32_t position = event->data.key_position_event.position;
++        if (position >= ZMK_KEYMAP_LEN) {
++            k_mutex_unlock(&transport_lock);
++            return -EINVAL;
++        }
++        unsigned int key = irq_lock();
++        WRITE_BIT(position_state[position / 8], position % 8,
++                  event->data.key_position_event.pressed);
++        irq_unlock(key);
++    }
++#endif
++    int ret = report_event(event);
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_unlock(&transport_lock);
++#endif
++    return ret;
++}
++
++static int select_first_available_transport_locked(void) {
+     // Transports are sorted by priority, so find the first
+     // One that's available, and enable it. Any transport that
+     // Doesn't support `get_status` is assumed to be always
+@@ -111,9 +165,27 @@ static int select_first_available_transport(void) {
+         }
+     }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    const struct zmk_split_transport_peripheral *previous = active_transport;
++    active_transport = NULL;
++    if (previous && previous->api->set_enabled) {
++        previous->api->set_enabled(false);
++    }
++#endif
+     return -ENODEV;
+ }
+ 
++static int select_first_available_transport(void) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_lock(&transport_lock, K_FOREVER);
++#endif
++    int ret = select_first_available_transport_locked();
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    k_mutex_unlock(&transport_lock);
++#endif
++    return ret;
++}
++
+ static int transport_status_changed_cb(const struct zmk_split_transport_peripheral *p,
+                                        struct zmk_split_transport_status status) {
+     if (p == active_transport) {
+@@ -202,4 +274,4 @@ ZMK_SUBSCRIPTION(split_peripheral, zmk_sensor_event);
+ 
+ #if IS_ENABLED(CONFIG_ZMK_BATTERY_REPORTING)
+ ZMK_SUBSCRIPTION(split_peripheral, zmk_battery_state_changed);
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/zmk/app/src/split/wired/Kconfig b/zmk/app/src/split/wired/Kconfig
+index 465fac01..dcbdde54 100644
+--- a/zmk/app/src/split/wired/Kconfig
++++ b/zmk/app/src/split/wired/Kconfig
+@@ -28,6 +28,17 @@ config ZMK_SPLIT_WIRED_UART_MODE_POLLING
+ 
+ endchoice
+ 
++config ZMK_SPLIT_WIRED_HANDSHAKE
++    bool "Experimental full-duplex UART link handshake and BLE fallback"
++    depends on ZMK_SPLIT_BLE && ZMK_SPLIT_WIRED_UART_MODE_INTERRUPT
++    select ENTROPY_GENERATOR
++    help
++        Keep UART listening while BLE is selected. Require a versioned,
++        bidirectional handshake before selecting wired split, and fall back
++        on loss of acknowledged heartbeat. Both halves must run this protocol.
++        Full-duplex, one peripheral, no detect GPIO only. Hardware hot-plug
++        and power safety must be verified separately.
++
+ if ZMK_SPLIT_WIRED_UART_MODE_POLLING
+ 
+ config ZMK_SPLIT_WIRED_POLLING_RX_PERIOD
+diff --git a/zmk/app/src/split/wired/central.c b/zmk/app/src/split/wired/central.c
+index 0354e52d..464dde96 100644
+--- a/zmk/app/src/split/wired/central.c
++++ b/zmk/app/src/split/wired/central.c
+@@ -6,6 +6,7 @@
+ 
+ #include <zephyr/types.h>
+ #include <zephyr/init.h>
++#include <zephyr/random/random.h>
+ 
+ #include <zephyr/pm/device.h>
+ #include <zephyr/pm/device_runtime.h>
+@@ -83,6 +84,35 @@ static const struct gpio_dt_spec detect_gpio = GPIO_DT_SPEC_INST_GET(0, detect_g
+ 
+ static void publish_events_work(struct k_work *work);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++static struct zmk_wired_link link;
++static bool link_enabled;
++static bool link_initialized;
++static void notify_transport_status(void);
++static void link_tick(struct k_work *work);
++static K_WORK_DELAYABLE_DEFINE(link_work, link_tick);
++
++static void clear_link_buffers(void) {
++    unsigned int key = irq_lock();
++    uart_irq_tx_disable(uart);
++    ring_buf_reset(&tx_buf);
++    ring_buf_reset(&rx_buf);
++    irq_unlock(key);
++}
++
++static void restart_link(void) {
++    uint32_t session = sys_rand32_get() | 1U;
++    unsigned int key = irq_lock();
++    bool was_ready = link.ready;
++    clear_link_buffers();
++    zmk_wired_link_reset(&link, session, 0, k_uptime_get());
++    irq_unlock(key);
++    if (was_ready) {
++        notify_transport_status();
++    }
++}
++#endif
++
+ K_WORK_DEFINE(publish_events, publish_events_work);
+ 
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_UART_MODE_ASYNC)
+@@ -176,6 +206,9 @@ static void stop_rx(void) {
+ #endif // HAS_DETECT_GPIO
+ 
+ static ssize_t get_payload_data_size(const struct zmk_split_transport_central_command *cmd) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    return zmk_split_wired_command_data_size(cmd);
++#else
+     switch (cmd->type) {
+     case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_POLL_EVENTS:
+         return 0;
+@@ -188,6 +221,7 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_central_co
+     default:
+         return -ENOTSUP;
+     }
++#endif
+ }
+ 
+ static int split_central_wired_send_command(uint8_t source,
+@@ -196,6 +230,13 @@ static int split_central_wired_send_command(uint8_t source,
+         return -EINVAL;
+     }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (cmd.type != ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_LINK_CONTROL &&
++        (!link.ready || !link_enabled || zmk_wired_link_expired(&link, k_uptime_get()))) {
++        return -ENOTCONN;
++    }
++#endif
++
+     ssize_t data_size = get_payload_data_size(&cmd);
+     if (data_size < 0) {
+         LOG_WRN("Failed to determine payload data size %d", data_size);
+@@ -203,13 +244,14 @@ static int split_central_wired_send_command(uint8_t source,
+     }
+ 
+     // Data + type + source
+-    size_t payload_size =
+-        data_size + sizeof(source) + sizeof(enum zmk_split_transport_central_command_type);
++    size_t payload_size = data_size + offsetof(struct command_payload, cmd.data);
+ 
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     if (ring_buf_space_get(&tx_buf) < MSG_EXTRA_SIZE + payload_size) {
+         LOG_WRN("No room to send command to the peripheral %d", source);
+         return -ENOSPC;
+     }
++#endif
+ 
+     struct command_envelope env = {.prefix =
+                                        {
+@@ -218,14 +260,27 @@ static int split_central_wired_send_command(uint8_t source,
+                                        },
+                                    .payload = {
+                                        .source = source,
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++                                       .tag = {.session = link.session, .peer = link.peer},
++#endif
+                                        .cmd = cmd,
+                                    }};
+ 
+     struct msg_postfix postfix = {.crc =
+                                       crc32_ieee((void *)&env, sizeof(env.prefix) + payload_size)};
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    unsigned int key = irq_lock();
++    if (ring_buf_space_get(&tx_buf) < MSG_EXTRA_SIZE + payload_size) {
++        irq_unlock(key);
++        return -ENOSPC;
++    }
++#endif
+     ring_buf_put(&tx_buf, (uint8_t *)&env, sizeof(env.prefix) + payload_size);
+     ring_buf_put(&tx_buf, (uint8_t *)&postfix, sizeof(postfix));
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    irq_unlock(key);
++#endif
+ 
+     if (can_tx() >= 0) {
+         begin_tx();
+@@ -234,6 +289,21 @@ static int split_central_wired_send_command(uint8_t source,
+     return 0;
+ }
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++static void link_tick(struct k_work *work) {
++    if (zmk_wired_link_expired(&link, k_uptime_get())) {
++        restart_link();
++    }
++    zmk_wired_link_request(&link);
++    struct zmk_split_transport_central_command cmd = {
++        .type = ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_LINK_CONTROL,
++        .data.link = {
++            .version = ZMK_WIRED_LINK_VERSION, .phase = link.phase, .sequence = link.sequence}};
++    split_central_wired_send_command(0, cmd);
++    k_work_reschedule(&link_work, K_MSEC(ZMK_WIRED_LINK_INTERVAL_MS));
++}
++#endif
++
+ #if IS_HALF_DUPLEX_MODE
+ 
+ void rx_done_cb(struct k_work *work);
+@@ -377,6 +447,12 @@ static int zmk_split_wired_central_init(void) {
+ 
+ #endif // HAS_DETECT_GPIO
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    begin_rx();
++    restart_link();
++    link_initialized = true;
++    k_work_schedule(&link_work, K_MSEC(ZMK_WIRED_LINK_INTERVAL_MS));
++#endif
+     return 0;
+ }
+ 
+@@ -389,6 +465,11 @@ static int split_central_wired_get_available_source_ids(uint8_t *sources) {
+ }
+ 
+ static int split_central_wired_set_enabled(bool enabled) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    /* Selection controls data, never the UART receiver used for discovery. */
++    link_enabled = enabled;
++    return 0;
++#else
+     if (enabled) {
+         begin_rx();
+ #if IS_HALF_DUPLEX_MODE
+@@ -406,9 +487,10 @@ static int split_central_wired_set_enabled(bool enabled) {
+     }
+ 
+     return -ENOTSUP;
++#endif
+ }
+ 
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+ 
+ static zmk_split_transport_central_status_changed_cb_t transport_status_cb;
+ 
+@@ -419,6 +501,13 @@ split_central_wired_set_status_callback(zmk_split_transport_central_status_chang
+ }
+ 
+ static struct zmk_split_transport_status split_central_wired_get_status() {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    return (struct zmk_split_transport_status){
++        .available = link_initialized && link.ready,
++        .enabled = link_enabled,
++        .connections = link.ready ? ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_ALL_CONNECTED
++                                  : ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_DISCONNECTED};
++#else
+     int detected = gpio_pin_get_dt(&detect_gpio);
+     if (detected > 0) {
+         return (struct zmk_split_transport_status){
+@@ -435,6 +524,7 @@ static struct zmk_split_transport_status split_central_wired_get_status() {
+ 
+         };
+     }
++#endif
+ }
+ 
+ #endif // HAS_DETECT_GPIO
+@@ -443,7 +533,7 @@ static const struct zmk_split_transport_central_api central_api = {
+     .send_command = split_central_wired_send_command,
+     .get_available_source_ids = split_central_wired_get_available_source_ids,
+     .set_enabled = split_central_wired_set_enabled,
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     .set_status_callback = split_central_wired_set_status_callback,
+     .get_status = split_central_wired_get_status,
+ #endif // HAS_DETECT_GPIO
+@@ -451,7 +541,7 @@ static const struct zmk_split_transport_central_api central_api = {
+ 
+ ZMK_SPLIT_TRANSPORT_CENTRAL_REGISTER(wired_central, &central_api, CONFIG_ZMK_SPLIT_WIRED_PRIORITY);
+ 
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+ 
+ static void notify_transport_status(void) {
+     if (transport_status_cb) {
+@@ -474,6 +564,44 @@ static void publish_events_work(struct k_work *work) {
+             zmk_split_wired_get_item(&rx_buf, (uint8_t *)&env, sizeof(struct event_envelope));
+         switch (item_err) {
+         case 0:
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++            if (env.payload.source != 0 ||
++                env.prefix.payload_size < offsetof(struct event_payload, event.data)) {
++                continue;
++            }
++            ssize_t data_size = zmk_split_wired_event_data_size(&env.payload.event);
++            if (data_size < 0 ||
++                env.prefix.payload_size != offsetof(struct event_payload, event.data) + data_size) {
++                continue;
++            }
++            if (env.payload.event.type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL) {
++                struct zmk_split_link_control ctl = env.payload.event.data.link.control;
++                unsigned int key = irq_lock();
++                bool was_ready = link.ready;
++                bool accepted =
++                    zmk_wired_link_response(&link, ctl.version, ctl.phase, env.payload.tag.session,
++                                            env.payload.tag.peer, ctl.sequence, k_uptime_get());
++                irq_unlock(key);
++                if (!accepted) {
++                    continue;
++                }
++                if (link.ready != was_ready) {
++                    notify_transport_status();
++                }
++                if (!link.ready) {
++                    k_work_reschedule(&link_work, K_NO_WAIT);
++                    continue;
++                }
++                /* The COMMIT response and each heartbeat carry a full snapshot. */
++                memmove(env.payload.event.data.position_state,
++                        env.payload.event.data.link.position_state, ZMK_SPLIT_POSITION_STATE_BYTES);
++                env.payload.event.type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE;
++            }
++            if (!link.ready || !link_enabled || zmk_wired_link_expired(&link, k_uptime_get()) ||
++                env.payload.tag.session != link.session || env.payload.tag.peer != link.peer) {
++                continue;
++            }
++#endif
+             zmk_split_transport_central_peripheral_event_handler(&wired_central, env.payload.source,
+                                                                  env.payload.event);
+             break;
+@@ -481,7 +609,7 @@ static void publish_events_work(struct k_work *work) {
+             return;
+         default:
+             LOG_WRN("Issue fetching an item from the RX buffer: %d", item_err);
+-            return;
++            break;
+         }
+     }
+ }
+diff --git a/zmk/app/src/split/wired/peripheral.c b/zmk/app/src/split/wired/peripheral.c
+index 71d3da83..160f453c 100644
+--- a/zmk/app/src/split/wired/peripheral.c
++++ b/zmk/app/src/split/wired/peripheral.c
+@@ -6,6 +6,7 @@
+ 
+ #include <zephyr/types.h>
+ #include <zephyr/init.h>
++#include <zephyr/random/random.h>
+ 
+ #include <zephyr/pm/device.h>
+ #include <zephyr/pm/device_runtime.h>
+@@ -50,6 +51,7 @@ RING_BUF_DECLARE(chosen_rx_buf, RX_BUFFER_SIZE);
+ RING_BUF_DECLARE(chosen_tx_buf, TX_BUFFER_SIZE);
+ 
+ static const uint8_t peripheral_id = 0;
++static bool is_enabled;
+ 
+ K_SEM_DEFINE(tx_sem, 0, 1);
+ 
+@@ -82,6 +84,40 @@ static const struct gpio_dt_spec detect_gpio = GPIO_DT_SPEC_INST_GET(0, detect_g
+ 
+ static void publish_commands_work(struct k_work *work);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++static struct zmk_wired_link link;
++static bool link_initialized;
++static void notify_transport_status(void);
++static void link_tick(struct k_work *work);
++static K_WORK_DELAYABLE_DEFINE(link_work, link_tick);
++
++static void clear_link_buffers(void) {
++    unsigned int key = irq_lock();
++    uart_irq_tx_disable(uart);
++    ring_buf_reset(&chosen_tx_buf);
++    ring_buf_reset(&chosen_rx_buf);
++    irq_unlock(key);
++}
++
++static void restart_link(void) {
++    unsigned int key = irq_lock();
++    bool was_ready = link.ready;
++    clear_link_buffers();
++    zmk_wired_link_reset(&link, 0, 0, k_uptime_get());
++    irq_unlock(key);
++    if (was_ready) {
++        notify_transport_status();
++    }
++}
++
++static void link_tick(struct k_work *work) {
++    if (zmk_wired_link_expired(&link, k_uptime_get())) {
++        restart_link();
++    }
++    k_work_reschedule(&link_work, K_MSEC(ZMK_WIRED_LINK_INTERVAL_MS));
++}
++#endif
++
+ K_WORK_DEFINE(publish_commands, publish_commands_work);
+ 
+ static void process_tx_cb(void);
+@@ -264,6 +300,12 @@ static int zmk_split_wired_peripheral_init(void) {
+ 
+ #endif // HAS_DETECT_GPIO
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    begin_rx();
++    restart_link();
++    link_initialized = true;
++    k_work_schedule(&link_work, K_MSEC(ZMK_WIRED_LINK_INTERVAL_MS));
++#endif
+     return 0;
+ }
+ 
+@@ -280,6 +322,9 @@ static void begin_tx(void) {
+ }
+ 
+ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral_event *evt) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    return zmk_split_wired_event_data_size(evt);
++#else
+     switch (evt->type) {
+     case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT:
+         return sizeof(evt->data.input_event);
+@@ -292,25 +337,51 @@ static ssize_t get_payload_data_size(const struct zmk_split_transport_peripheral
+     default:
+         return -ENOTSUP;
+     }
++#endif
+ }
+ 
+ static int
+ split_peripheral_wired_report_event(const struct zmk_split_transport_peripheral_event *event) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    /* Snapshot capture and frame enqueue must be ordered against key edges and
++     * heartbeat
++     * replies, otherwise an older snapshot could follow a newer one. */
++    unsigned int key = irq_lock();
++    if (event->type != ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL &&
++        (!link.ready || !is_enabled || zmk_wired_link_expired(&link, k_uptime_get()))) {
++        irq_unlock(key);
++        return -ENOTCONN;
++    }
++    struct zmk_split_transport_peripheral_event snapshot = {0};
++    if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT) {
++        snapshot.type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE;
++        zmk_split_peripheral_get_position_state(snapshot.data.position_state);
++        event = &snapshot;
++    } else if (event->type == ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL) {
++        snapshot = *event;
++        zmk_split_peripheral_get_position_state(snapshot.data.link.position_state);
++        event = &snapshot;
++    }
++#endif
+     ssize_t data_size = get_payload_data_size(event);
+     if (data_size < 0) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++        irq_unlock(key);
++#endif
+         LOG_WRN("Failed to determine payload data size %d", data_size);
+         return data_size;
+     }
+ 
+     // Data + type + source
+-    size_t payload_size =
+-        data_size + sizeof(peripheral_id) + sizeof(enum zmk_split_transport_peripheral_event_type);
++    size_t payload_size = data_size + offsetof(struct event_payload, event.data);
+ 
++#if !IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     if (ring_buf_space_get(&chosen_tx_buf) < MSG_EXTRA_SIZE + payload_size) {
+         LOG_WRN("No room to send peripheral to the central (have %d but only space for %d)",
+                 MSG_EXTRA_SIZE + payload_size, ring_buf_space_get(&chosen_tx_buf));
+         return -ENOSPC;
+     }
++#endif
+ 
+     struct event_envelope env = {.prefix =
+                                      {
+@@ -319,6 +390,9 @@ split_peripheral_wired_report_event(const struct zmk_split_transport_peripheral_
+                                      },
+                                  .payload = {
+                                      .source = peripheral_id,
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++                                     .tag = {.session = link.session, .peer = link.peer},
++#endif
+                                      .event = *event,
+                                  }};
+ 
+@@ -327,6 +401,12 @@ split_peripheral_wired_report_event(const struct zmk_split_transport_peripheral_
+ 
+     LOG_HEXDUMP_DBG(&env, sizeof(env.prefix) + payload_size, "Payload");
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    if (ring_buf_space_get(&chosen_tx_buf) < MSG_EXTRA_SIZE + payload_size) {
++        irq_unlock(key);
++        return -ENOSPC;
++    }
++#endif
+     size_t put = ring_buf_put(&chosen_tx_buf, (uint8_t *)&env, sizeof(env.prefix) + payload_size);
+     if (put != sizeof(env.prefix) + payload_size) {
+         LOG_WRN("Failed to put the whole message (%d vs %d)", put,
+@@ -336,6 +416,9 @@ split_peripheral_wired_report_event(const struct zmk_split_transport_peripheral_
+     if (put != sizeof(postfix)) {
+         LOG_WRN("Failed to put the whole message (%d vs %d)", put, sizeof(postfix));
+     }
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    irq_unlock(key);
++#endif
+ 
+ #if !IS_HALF_DUPLEX_MODE
+     begin_tx();
+@@ -344,9 +427,12 @@ split_peripheral_wired_report_event(const struct zmk_split_transport_peripheral_
+     return 0;
+ }
+ 
+-static bool is_enabled;
+-
+ static int split_peripheral_wired_set_enabled(bool enabled) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    /* Always listen for the next PROBE, including while BLE is selected. */
++    is_enabled = enabled;
++    return 0;
++#else
+     if (is_enabled == enabled) {
+         return 0;
+     }
+@@ -364,9 +450,10 @@ static int split_peripheral_wired_set_enabled(bool enabled) {
+     }
+ 
+     return -ENOTSUP;
++#endif
+ }
+ 
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+ 
+ static zmk_split_transport_peripheral_status_changed_cb_t transport_status_cb;
+ 
+@@ -377,6 +464,13 @@ split_peripheral_wired_set_status_callback(zmk_split_transport_peripheral_status
+ }
+ 
+ static struct zmk_split_transport_status split_peripheral_wired_get_status() {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    return (struct zmk_split_transport_status){
++        .available = link_initialized && link.ready,
++        .enabled = is_enabled,
++        .connections = link.ready ? ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_ALL_CONNECTED
++                                  : ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_DISCONNECTED};
++#else
+     int detected = gpio_pin_get_dt(&detect_gpio);
+     if (detected > 0) {
+         return (struct zmk_split_transport_status){
+@@ -393,6 +487,7 @@ static struct zmk_split_transport_status split_peripheral_wired_get_status() {
+ 
+         };
+     }
++#endif
+ }
+ 
+ #endif // HAS_DETECT_GPIO
+@@ -400,7 +495,7 @@ static struct zmk_split_transport_status split_peripheral_wired_get_status() {
+ static const struct zmk_split_transport_peripheral_api peripheral_api = {
+     .report_event = split_peripheral_wired_report_event,
+     .set_enabled = split_peripheral_wired_set_enabled,
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+     .set_status_callback = split_peripheral_wired_set_status_callback,
+     .get_status = split_peripheral_wired_get_status,
+ #endif // HAS_DETECT_GPIO
+@@ -409,7 +504,7 @@ static const struct zmk_split_transport_peripheral_api peripheral_api = {
+ ZMK_SPLIT_TRANSPORT_PERIPHERAL_REGISTER(wired_peripheral, &peripheral_api,
+                                         CONFIG_ZMK_SPLIT_WIRED_PRIORITY);
+ 
+-#if HAS_DETECT_GPIO
++#if HAS_DETECT_GPIO || IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
+ 
+ static void notify_transport_status(void) {
+     if (transport_status_cb) {
+@@ -421,6 +516,10 @@ static void notify_transport_status(void) {
+ #endif // HAS_DETECT_GPIO
+ 
+ static void process_tx_cb(void) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    /* UART callbacks run in IRQ context; all negotiation/selection is workqueue-only. */
++    k_work_submit(&publish_commands);
++#else
+     while (ring_buf_size_get(&chosen_rx_buf) > MSG_EXTRA_SIZE) {
+         struct command_envelope env;
+         int item_err = zmk_split_wired_get_item(&chosen_rx_buf, (uint8_t *)&env,
+@@ -446,11 +545,62 @@ static void process_tx_cb(void) {
+             return;
+         }
+     }
++#endif
+ }
+ static void publish_commands_work(struct k_work *work) {
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    while (ring_buf_size_get(&chosen_rx_buf) > MSG_EXTRA_SIZE) {
++        struct command_envelope env;
++        int err = zmk_split_wired_get_item(&chosen_rx_buf, (uint8_t *)&env, sizeof(env));
++        if (err == -EAGAIN) {
++            return;
++        }
++        if (err < 0 || env.payload.source != 0 ||
++            env.prefix.payload_size < offsetof(struct command_payload, cmd.data)) {
++            continue;
++        }
++        ssize_t data_size = zmk_split_wired_command_data_size(&env.payload.cmd);
++        if (data_size < 0 ||
++            env.prefix.payload_size != offsetof(struct command_payload, cmd.data) + data_size) {
++            continue;
++        }
++        if (zmk_wired_link_expired(&link, k_uptime_get())) {
++            restart_link();
++        }
++        if (env.payload.cmd.type == ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_LINK_CONTROL) {
++            struct zmk_split_link_control ctl = env.payload.cmd.data.link;
++            uint32_t cookie = sys_rand32_get() | 1U;
++            unsigned int key = irq_lock();
++            bool was_ready = link.ready;
++            uint32_t old_session = link.session;
++            bool accepted =
++                zmk_wired_link_receive(&link, ctl.version, ctl.phase, env.payload.tag.session,
++                                       env.payload.tag.peer, ctl.sequence, cookie, k_uptime_get());
++            if (accepted && link.session != old_session) {
++                clear_link_buffers();
++            }
++            irq_unlock(key);
++            if (!accepted) {
++                continue;
++            }
++            if (was_ready != link.ready) {
++                notify_transport_status();
++            }
++            struct zmk_split_transport_peripheral_event reply = {
++                .type = ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL,
++                .data.link.control = ctl};
++            zmk_split_peripheral_get_position_state(reply.data.link.position_state);
++            split_peripheral_wired_report_event(&reply);
++        } else if (link.ready && is_enabled && env.payload.tag.session == link.session &&
++                   env.payload.tag.peer == link.peer) {
++            zmk_split_transport_peripheral_command_handler(&wired_peripheral, env.payload.cmd);
++        }
++    }
++#else
+     struct zmk_split_transport_central_command cmd;
+ 
+     while (k_msgq_get(&cmd_msg_queue, &cmd, K_NO_WAIT) >= 0) {
+         zmk_split_transport_peripheral_command_handler(&wired_peripheral, cmd);
+     }
++#endif
+ }
+diff --git a/zmk/app/src/split/wired/wired.c b/zmk/app/src/split/wired/wired.c
+index 0df4c709..ffb524b3 100644
+--- a/zmk/app/src/split/wired/wired.c
++++ b/zmk/app/src/split/wired/wired.c
+@@ -13,6 +13,44 @@
+ 
+ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++int zmk_split_wired_event_data_size(const struct zmk_split_transport_peripheral_event *evt) {
++    switch (evt->type) {
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_KEY_POSITION_EVENT:
++        return sizeof(evt->data.key_position_event);
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_SENSOR_EVENT:
++        return sizeof(evt->data.sensor_event);
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_INPUT_EVENT:
++        return sizeof(evt->data.input_event);
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_BATTERY_EVENT:
++        return sizeof(evt->data.battery_event);
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_POSITION_STATE:
++        return sizeof(evt->data.position_state);
++    case ZMK_SPLIT_TRANSPORT_PERIPHERAL_EVENT_TYPE_LINK_CONTROL:
++        return sizeof(evt->data.link);
++    default:
++        return -ENOTSUP;
++    }
++}
++
++int zmk_split_wired_command_data_size(const struct zmk_split_transport_central_command *cmd) {
++    switch (cmd->type) {
++    case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_POLL_EVENTS:
++        return 0;
++    case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_INVOKE_BEHAVIOR:
++        return sizeof(cmd->data.invoke_behavior);
++    case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_SET_PHYSICAL_LAYOUT:
++        return sizeof(cmd->data.set_physical_layout);
++    case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_SET_HID_INDICATORS:
++        return sizeof(cmd->data.set_hid_indicators);
++    case ZMK_SPLIT_TRANSPORT_CENTRAL_CMD_TYPE_LINK_CONTROL:
++        return sizeof(cmd->data.link);
++    default:
++        return -ENOTSUP;
++    }
++}
++#endif
++
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_UART_MODE_POLLING)
+ 
+ void zmk_split_wired_poll_out(struct ring_buf *tx_buf, const struct device *uart) {
+@@ -284,23 +322,26 @@ int zmk_split_wired_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_s
+             uint8_t discarded_byte;
+             ring_buf_get(rx_buf, &discarded_byte, 1);
+ 
+-            LOG_WRN("Prefix mismatch, discarding byte %0x", discarded_byte);
++            LOG_DBG("Prefix mismatch, discarding byte %0x", discarded_byte);
+ 
+             continue;
+         }
+ 
+         size_t payload_to_read = sizeof(prefix) + prefix.payload_size;
+ 
+-        if (payload_to_read > env_size) {
++        if (!prefix.payload_size || payload_to_read > env_size) {
+             LOG_WRN("Invalid message with payload %d bigger than expected max %d", payload_to_read,
+                     env_size);
+-            return -EINVAL;
++            uint8_t discarded_byte;
++            ring_buf_get(rx_buf, &discarded_byte, 1);
++            continue;
+         }
+ 
+         if (ring_buf_size_get(rx_buf) < payload_to_read + sizeof(struct msg_postfix)) {
+             return -EAGAIN;
+         }
+ 
++        memset(env, 0, env_size);
+         // Now that prefix matches, read it out so we can read the rest of the payload.
+         __ASSERT_EVAL((void)ring_buf_get(rx_buf, env, payload_to_read),
+                       uint32_t read = ring_buf_get(rx_buf, env, payload_to_read),
+@@ -324,4 +365,4 @@ int zmk_split_wired_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_s
+     }
+ 
+     return -EAGAIN;
+-}
+\ No newline at end of file
++}
+diff --git a/zmk/app/src/split/wired/wired.h b/zmk/app/src/split/wired/wired.h
+index d48f29b7..48293e8d 100644
+--- a/zmk/app/src/split/wired/wired.h
++++ b/zmk/app/src/split/wired/wired.h
+@@ -11,6 +11,19 @@
+ 
+ #include <zmk/split/transport/types.h>
+ 
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++#include "link.h"
++struct zmk_wired_session_tag {
++    uint32_t session;
++    uint32_t peer;
++} __packed;
++
++BUILD_ASSERT(!DT_PROP_OR(DT_COMPAT_GET_ANY_STATUS_OKAY(zmk_wired_split), half_duplex, false),
++             "Handshake requires full-duplex UART");
++BUILD_ASSERT(!DT_NODE_HAS_PROP(DT_COMPAT_GET_ANY_STATUS_OKAY(zmk_wired_split), detect_gpios),
++             "Handshake replaces detect-gpios");
++#endif
++
+ #define ZMK_SPLIT_WIRED_ENVELOPE_MAGIC_PREFIX "ZmKw"
+ 
+ struct msg_prefix {
+@@ -20,6 +33,9 @@ struct msg_prefix {
+ 
+ struct command_payload {
+     uint8_t source;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    struct zmk_wired_session_tag tag;
++#endif
+     struct zmk_split_transport_central_command cmd;
+ } __packed;
+ 
+@@ -30,6 +46,9 @@ struct command_envelope {
+ 
+ struct event_payload {
+     uint8_t source;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++    struct zmk_wired_session_tag tag;
++#endif
+     struct zmk_split_transport_peripheral_event event;
+ } __packed;
+ 
+@@ -93,4 +112,9 @@ int zmk_split_wired_async_rx_cancel(struct zmk_split_wired_async_state *state);
+ 
+ #endif
+ 
+-int zmk_split_wired_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size);
+\ No newline at end of file
++int zmk_split_wired_get_item(struct ring_buf *rx_buf, uint8_t *env, size_t env_size);
++
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE)
++int zmk_split_wired_event_data_size(const struct zmk_split_transport_peripheral_event *evt);
++int zmk_split_wired_command_data_size(const struct zmk_split_transport_central_command *cmd);
++#endif
+diff --git a/modu-c-firmware/modu-module/boards/shields/modu/modu_left.overlay b/modu-c-firmware/modu-module/boards/shields/modu/modu_left.overlay
+index 6c7bd74..2b1c858 100644
+--- a/modu-c-firmware/modu-module/boards/shields/modu/modu_left.overlay
++++ b/modu-c-firmware/modu-module/boards/shields/modu/modu_left.overlay
+@@ -9,11 +9,23 @@
+ #include "modu.dtsi"
+ 
+ / {
++    wired_split: wired_split {
++        compatible = "zmk,wired-split";
++        device = <&uart0>;
++        status = "okay";
++    };
++
+     chosen {
+         zmk,kscan = &alt_thumb_kscan;
+     };
+ };
+ 
++/* V092 dedicated inter-half port; this is NOT a USB data interface. */
++&uart0 {
++    status = "okay";
++    current-speed = <115200>;
++};
++
+ &alt_thumb_kscan {
+     status = "okay";
+ };
+diff --git a/modu-c-firmware/modu-module/boards/shields/modu/modu_right.overlay b/modu-c-firmware/modu-module/boards/shields/modu/modu_right.overlay
+index f4c9418..fe0afc4 100644
+--- a/modu-c-firmware/modu-module/boards/shields/modu/modu_right.overlay
++++ b/modu-c-firmware/modu-module/boards/shields/modu/modu_right.overlay
+@@ -9,11 +9,37 @@
+ #include "modu.dtsi"
+ 
+ / {
++    wired_split: wired_split {
++        compatible = "zmk,wired-split";
++        device = <&uart0>;
++        status = "okay";
++    };
++
+     chosen {
+         zmk,kscan = &alt_thumb_kscan;
+     };
+ };
+ 
++/* V092 routes the same named nets to D+/D- on both halves. Cross the
++ * peripheral's pin roles for a straight-through USB-C data cable.
++ * Verify board/cable continuity and power safety before connecting hardware.
++ */
++&uart0_default {
++    group1 { psels = <NRF_PSEL(UART_TX, 0, 14)>; };
++    group2 { psels = <NRF_PSEL(UART_RX, 0, 16)>; };
++};
++
++&uart0_sleep {
++    group1 {
++        psels = <NRF_PSEL(UART_TX, 0, 14)>, <NRF_PSEL(UART_RX, 0, 16)>;
++    };
++};
++
++&uart0 {
++    status = "okay";
++    current-speed = <115200>;
++};
++
+ &alt_thumb_kscan {
+     status = "okay";
+ };
+diff --git a/modu-c-firmware/modu-module/src/led_breath/led_breath.c b/modu-c-firmware/modu-module/src/led_breath/led_breath.c
+index 1c660a0..41ef621 100644
+--- a/modu-c-firmware/modu-module/src/led_breath/led_breath.c
++++ b/modu-c-firmware/modu-module/src/led_breath/led_breath.c
+@@ -33,8 +33,14 @@ __weak bool zmk_split_bt_peripheral_is_bonded(void) { return false; }
+ 
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+ extern const struct zmk_split_transport_central *active_transport;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED)
++extern struct zmk_split_transport_central wired_central;
++#endif
+ #else
+ extern const struct zmk_split_transport_peripheral *active_transport;
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED)
++extern struct zmk_split_transport_peripheral wired_peripheral;
++#endif
+ #endif
+ 
+ #define MODU_IS_LEFT_SHIELD  IS_ENABLED(CONFIG_SHIELD_MODU_LEFT)
+@@ -63,9 +69,10 @@ static const uint16_t white_color[3] = {BREATH_SCALE, BREATH_SCALE, BREATH_SCALE
+ #endif
+ 
+ #if MODU_IS_RIGHT_SHIELD
+-/* Right wireless channel order is green, blue, red. */
++/* User observed channel 0 as blue; retain BLE output and add red for UART. */
+ static const uint16_t right_unset_color[3] = {0, BREATH_SCALE, 0};
+ static const uint16_t right_connected_color[3] = {BREATH_SCALE, 0, 0};
++static const uint16_t right_uart_color[3] = {BREATH_SCALE, 0, 8500};
+ static const uint16_t right_disconnected_color[3] = {0, 0, BREATH_SCALE};
+ #else
+ /* Hardware PWM channel order is blue, green, red. */
+@@ -104,6 +111,27 @@ static uint32_t blink_level(uint32_t tick, uint32_t blink_ms)
+ }
+ 
+ #if MODU_IS_RIGHT_SHIELD
++static bool split_uart_connected(void)
++{
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_WIRED)
++#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
++    const struct zmk_split_transport_central *wired = &wired_central;
++#else
++    const struct zmk_split_transport_peripheral *wired = &wired_peripheral;
++#endif
++    if (active_transport != wired) {
++        return false;
++    }
++
++    struct zmk_split_transport_status status = wired->api->get_status();
++
++    return status.available && status.enabled &&
++           status.connections == ZMK_SPLIT_TRANSPORT_CONNECTIONS_STATUS_ALL_CONNECTED;
++#else
++    return false;
++#endif
++}
++
+ static bool split_transport_connected(void)
+ {
+ #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+@@ -153,7 +181,11 @@ static bool split_setup_done(void)
+ 
+     return status.available;
+ #else
+-    return zmk_split_bt_peripheral_is_bonded();
++    return zmk_split_bt_peripheral_is_bonded()
++#if MODU_IS_RIGHT_SHIELD
++           || split_transport_connected()
++#endif
++        ;
+ #endif
+ }
+ 
+@@ -173,6 +205,7 @@ static void breath_work_handler(struct k_work *work)
+ #if MODU_IS_RIGHT_SHIELD
+     bool split_setup = split_setup_done();
+     bool split_ready = split_transport_connected();
++    bool uart_ready = split_uart_connected();
+     bool booting = breath_tick * BREATH_STEP_MS < BOOT_RED_MS;
+     uint32_t level = split_setup ? BREATH_SCALE : blink_level(breath_tick, FAST_BLINK_MS);
+ #else
+@@ -190,6 +223,7 @@ static void breath_work_handler(struct k_work *work)
+ #if MODU_IS_RIGHT_SHIELD
+         uint32_t channel = i < 3 ? (!split_setup ? right_unset_color[i]
+                                                  : booting ? boot_color[i]
++                                                           : uart_ready ? right_uart_color[i]
+                                                            : split_ready ? right_connected_color[i]
+                                                                          : right_disconnected_color[i])
+                                  : BREATH_SCALE;
+diff --git a/zmk/app/src/split/wired/link.h b/zmk/app/src/split/wired/link.h
+new file mode 100644
+--- /dev/null
++++ b/zmk/app/src/split/wired/link.h
+@@ -0,0 +1,108 @@
++/*
++ * Copyright (c) 2026 EKS Inc.
++ * SPDX-License-Identifier: MIT
++ */
++#pragma once
++
++#include <stdbool.h>
++#include <stdint.h>
++
++/* Control messages use the existing wired envelope and CRC, not another
++ * UART protocol. One outstanding request proves BOTH directions still work.
++ * A duplicate request may be answered, but must not extend the lease.
++ */
++#define ZMK_WIRED_LINK_VERSION 1
++#define ZMK_WIRED_LINK_INTERVAL_MS 100
++#define ZMK_WIRED_LINK_TIMEOUT_MS 600
++
++enum zmk_wired_link_phase {
++    ZMK_WIRED_LINK_PROBE = 1,
++    ZMK_WIRED_LINK_COMMIT,
++    ZMK_WIRED_LINK_PING,
++};
++
++struct zmk_wired_link {
++    uint32_t session;
++    uint32_t peer;
++    uint32_t sequence;
++    uint8_t phase;
++    bool ready;
++    bool pending;
++    int64_t last_rx;
++};
++
++static inline void zmk_wired_link_reset(struct zmk_wired_link *link, uint32_t session,
++                                        uint32_t peer, int64_t now) {
++    *link = (struct zmk_wired_link){
++        .session = session, .peer = peer, .phase = ZMK_WIRED_LINK_PROBE, .last_rx = now};
++}
++
++static inline bool zmk_wired_link_expired(const struct zmk_wired_link *link, int64_t now) {
++    return now - link->last_rx >= ZMK_WIRED_LINK_TIMEOUT_MS;
++}
++
++static inline void zmk_wired_link_request(struct zmk_wired_link *link) {
++    if (!link->pending) {
++        ++link->sequence;
++        link->pending = true;
++    }
++}
++
++/* Central accepts only the response to its outstanding challenge. */
++static inline bool zmk_wired_link_response(struct zmk_wired_link *link, uint8_t version,
++                                           uint8_t phase, uint32_t session, uint32_t peer,
++                                           uint32_t sequence, int64_t now) {
++    if (zmk_wired_link_expired(link, now) || version != ZMK_WIRED_LINK_VERSION || !link->pending ||
++        session != link->session || !peer || phase != link->phase || sequence != link->sequence ||
++        (phase != ZMK_WIRED_LINK_PROBE && peer != link->peer)) {
++        return false;
++    }
++    link->last_rx = now;
++    link->pending = false;
++    link->peer = peer;
++    if (phase == ZMK_WIRED_LINK_PROBE) {
++        link->phase = ZMK_WIRED_LINK_COMMIT;
++    } else {
++        link->phase = ZMK_WIRED_LINK_PING;
++        link->ready = true;
++    }
++    return true;
++}
++
++/* Peripheral accepts a new central session only through PROBE, and switches
++ * only after a COMMIT echoing its own fresh cookie. */
++static inline bool zmk_wired_link_receive(struct zmk_wired_link *link, uint8_t version,
++                                          uint8_t phase, uint32_t session, uint32_t peer,
++                                          uint32_t sequence, uint32_t fresh_cookie, int64_t now) {
++    if (version != ZMK_WIRED_LINK_VERSION || !session || phase < ZMK_WIRED_LINK_PROBE ||
++        phase > ZMK_WIRED_LINK_PING) {
++        return false;
++    }
++    if (phase == ZMK_WIRED_LINK_PROBE) {
++        if (peer != 0) {
++            return false;
++        }
++        if (session != link->session) {
++            zmk_wired_link_reset(link, session, fresh_cookie, now);
++            link->sequence = sequence;
++            return true;
++        }
++        return link->phase == phase && link->sequence == sequence;
++    }
++    if (session != link->session || !peer || peer != link->peer) {
++        return false;
++    }
++    if (sequence == link->sequence) {
++        return phase == link->phase;
++    }
++    if (sequence != link->sequence + 1 ||
++        (phase == ZMK_WIRED_LINK_COMMIT && link->phase != ZMK_WIRED_LINK_PROBE) ||
++        (phase == ZMK_WIRED_LINK_PING && !link->ready)) {
++        return false;
++    }
++    link->sequence = sequence;
++    link->phase = phase;
++    link->last_rx = now;
++    link->ready = true;
++    return true;
++}

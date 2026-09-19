@@ -284,11 +284,17 @@ def check_build_files() -> None:
 
     workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
     required_workflow_tokens = (
-        f"build-user-config.yml@{ZMK_REVISION}",
-        "build_matrix_path: build.yaml",
-        "config_path: config",
-        "fallback_binary: hex",
-        "archive_name: modu-c-intermediate",
+        "image: zmkfirmware/zmk-build-arm:stable",
+        "west init -l config",
+        "west update --fetch-opt=--filter=tree:0",
+        "west zephyr-export",
+        f'test "$(git -C zmk rev-parse HEAD)" = "{ZMK_REVISION}"',
+        f'test "$(git -C modu-c-firmware rev-parse HEAD)" = "{MODU_REVISION}"',
+        "git apply --check config/uart.patch",
+        "git apply config/uart.patch",
+        'yaml.safe_load(Path("build.yaml").read_text())["include"]',
+        "CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE=y",
+        "name: modu-c-intermediate",
         "python3 scripts/package_firmware.py",
         "--family 0xADA52840",
         "python3 scripts/verify_uf2.py uf2/modu_left.uf2 uf2/modu_right.uf2",

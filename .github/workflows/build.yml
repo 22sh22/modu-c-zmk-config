@@ -50,12 +50,75 @@ jobs:
   build:
     name: Build both halves
     needs: validate
-    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@641514a97db345f499dd50b0360e594270f008fe
-    with:
-      build_matrix_path: build.yaml
-      config_path: config
-      fallback_binary: hex
-      archive_name: modu-c-intermediate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout user config
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Fetch pinned sources
+        run: |
+          west init -l config
+          west update --fetch-opt=--filter=tree:0
+          west zephyr-export
+
+      - name: Apply UART changes to build sources only
+        run: |
+          test "$(git -C zmk rev-parse HEAD)" = "641514a97db345f499dd50b0360e594270f008fe"
+          test "$(git -C modu-c-firmware rev-parse HEAD)" = "bee0bb4b812f63f279eb67e928accc89600b5904"
+          git apply --check config/uart.patch
+          git apply config/uart.patch
+
+      - name: Build both halves from build.yaml
+        run: |
+          python3 - <<'PY'
+          import os
+          import shlex
+          import shutil
+          import subprocess
+          from pathlib import Path
+          import yaml
+
+          root = Path.cwd()
+          artifacts = root / "intermediate"
+          artifacts.mkdir()
+          for target in yaml.safe_load(Path("build.yaml").read_text())["include"]:
+              name = target["artifact-name"]
+              output = root / "build" / name
+              command = ["west", "build", "-s", "zmk/app", "-d", str(output),
+                         "-b", target["board"]]
+              if target.get("snippet"):
+                  command += ["-S", target["snippet"]]
+              command += ["--", f"-DZMK_CONFIG={root / 'config'}",
+                          f"-DSHIELD={target['shield']}"]
+              command += shlex.split(os.path.expandvars(target.get("cmake-args", "")))
+              subprocess.run(command, check=True)
+              config = (output / "zephyr" / ".config").read_text()
+              for setting in ("CONFIG_ZMK_SPLIT_BLE=y", "CONFIG_ZMK_SPLIT_WIRED=y",
+                              "CONFIG_ZMK_SPLIT_WIRED_HANDSHAKE=y",
+                              "CONFIG_ZMK_SPLIT_WIRED_UART_MODE_INTERRUPT=y"):
+                  if setting not in config.splitlines():
+                      raise SystemExit(f"{name}: missing {setting}")
+              print(config, flush=True)
+              print((output / "zephyr" / "zephyr.dts").read_text(), flush=True)
+              native = output / "zephyr" / "zmk.uf2"
+              source = native if native.is_file() else output / "zephyr" / "zmk.hex"
+              shutil.copy2(source, artifacts / f"{name}{source.suffix}")
+          PY
+
+      - name: Upload intermediate build outputs
+        uses: actions/upload-artifact@v7
+        with:
+          name: modu-c-intermediate
+          path: intermediate/
+          if-no-files-found: error
 
   package:
     name: Package and verify flashable UF2 files
